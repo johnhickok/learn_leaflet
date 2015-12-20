@@ -1,0 +1,181 @@
+﻿<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" >
+<head>
+    <title>LA County - USNG Finder</title>
+   <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+   <link rel="stylesheet" href="http://egis3.lacounty.gov/leaflet/leaflet.css"/>
+   <link rel="stylesheet" href="http://egis3.lacounty.gov/leaflet/esri-leaflet-geocoder.css"/>
+   <!--<link rel="stylesheet" type="text/css" href="http://cdn-geoweb.s3.amazonaws.com/esri-leaflet-geocoder/1.0.0-rc.4/esri-leaflet-geocoder.css">-->
+   <script type="text/javascript" src="http://egis3.lacounty.gov/leaflet/leaflet.js"></script>
+   <script type="text/javascript" src="http://egis3.lacounty.gov/leaflet/esri-leaflet.js"></script>
+   <script type="text/javascript" src="http://egis3.lacounty.gov/leaflet/esri-leaflet-geocoder.js"></script>
+  <!-- <script type="text/javascript" src="http://cdn-geoweb.s3.amazonaws.com/esri-leaflet-geocoder/1.0.0-rc.4/esri-leaflet-geocoder.js"></script>-->
+   <script type="text/javascript">
+   </script>
+   <style type="text/css">
+    #map {position: absolute;top:0px;bottom:0px;right:0px;left:0px;border:1px solid black;}
+    #panel {position: absolute;top:20px;bottom:20px;left:20px;border:2px solid black;width:300px;}
+       #Button1
+       {
+           height: 36px;
+           width: 98px;
+       }
+       #selectedFeatures 
+       {
+        margin: 0 auto;
+        position: absolute;
+        right: 10px;
+        top: 10px;
+        text-align: center;
+        z-index: 10;
+        background: white;
+        padding: 1em;
+        width: 120px;
+       }
+  </style>
+
+</head>
+
+<body>
+
+<div id="map"></div>
+<div id="selectedFeatures" class="leaflet-bar">
+<input id="Button1" type="button" value="Find USNG" onclick="findUSNG();" style="background-color: #0000FF; color: #FFFFFF; font-weight: bold;"/>
+<div id="USNG_text" style="padding-top:5px;"></div>
+</div>
+<script type="text/javascript">
+
+//    // create the tile layer with correct attribution
+//    var osmUrl = 'http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+//    var osmAttrib = 'Map data © <a href="http://openstreetmap.org">OpenStreetMap</a> contributors';
+//    var osm = new L.TileLayer(osmUrl, { minZoom: 8, maxZoom: 12, attribution: osmAttrib });
+//    map.addLayer(osm);
+    var map = L.map('map').setView([34.26, -118.29], 10);
+    var tracking = false;
+    var following = false;
+    var redStar = L.icon({ iconUrl: 'http://egis3.lacounty.gov/leaflet/images/35px-White_star_in_red_circle.png', iconAnchor:[17.5,17.5] });
+    var path;
+    var currentLocation = new L.marker();
+    var clickPoint = new L.marker();
+    var mile1Circle = L.circle([34.26, -118.29], 1609.34);
+    var mile2Circle = L.circle([34.26, -118.29], 3218.69);
+    var USNG = L.esri.dynamicMapLayer('http://dpw.gis.lacounty.gov/dpw/rest/services/Grids/USNG/MapServer', {
+        format: 'png32',
+        layers: [1,2,3,4]});
+    //var USNG = L.esri.dynamicMapLayer('http://egis3.lacounty.gov/arcgis/rest/services/LACounty_Dynamic/USNG/MapServer', {
+    //    format: 'png32',
+    //    layers: [1,2,3,4]});
+    var identifiedFeature;
+    var pane = document.getElementById('USNG_text');
+
+    var searchControl = new L.esri.Geocoding.Controls.Geosearch({zoomToResult: false}).addTo(map);
+    var results = new L.LayerGroup().addTo(map);
+
+    function init() {
+
+        map.on('locationfound', onLocationFound);
+        map.on('locationerror', onLocationError);
+        map.on('click', function (e) { getUSNG(e.latlng, 'click'); });
+
+        // L.esri.tiledMapLayer("http://egis3.lacounty.gov/arcgis/rest/services/LACounty_Cache/LACounty_Base/MapServer", {
+		L.esri.tiledMapLayer("http://cache.gis.lacounty.gov/cache/rest/services/LACounty_Cache/LACounty_StreetMap/MapServer", {
+            maxZoom: 20
+        }).addTo(map);
+
+        USNG.addTo(map);
+        
+        searchControl.on('results', function (data) {
+            results.clearLayers();
+            for (var i = data.results.length - 1; i >= 0; i--) {
+                results.addLayer(L.marker(data.results[i].latlng));
+            }
+            map.setView(data.results[0].latlng, 15);
+            getUSNG(data.results[0].latlng, 'geocode');
+        });
+
+    }
+
+        
+    function findUSNG() {
+
+        map.locate({
+            setView: false,
+            watch: true,
+            enableHighAccuracy: true,
+            maximumAge: 10000,
+            timeout: 27000
+        });
+
+    }
+
+    function followStop() {
+        clearMap();
+        following = false;
+        tracking = false;
+        map.stopLocate();
+    }
+
+    function onLocationFound(e) {
+        var radius = e.accuracy / 2;
+        currentLocation.bindPopup("You are within " + radius + " meters from this point");
+        clickPoint.setLatLng(e.latlng);
+        clickPoint.setIcon(redStar);
+        map.addLayer(clickPoint);
+
+        map.setView(e.latlng, 19);
+        map.stopLocate();
+        getUSNG(e.latlng, 'gps');
+
+    }
+
+    function clearMap() {
+        if (map.hasLayer(currentLocation)) {
+            map.removeLayer(currentLocation);
+        }
+        if (map.hasLayer(identifiedFeature)) {
+            map.removeLayer(identifiedFeature);
+            pane.innerHTML = '';
+        }
+    }
+
+    function onLocationError(e) {
+        alert(e.message);
+    }
+
+    function getUSNG(latlng, type) {
+
+        clearMap();
+
+        USNG.identify().on(map).at(latlng).layers('visible:4').run(function (error, featureCollection, response) {
+            //            response.results.forEach(function (layer) {
+            //                console.log(layer);
+            //            });
+            identifiedFeature = new L.GeoJSON(featureCollection.features[0], {
+                style: function () {
+                    return {
+                        color: '#5C7DB8',
+                        weight: 2
+                    };
+                },
+                onEachFeature: function (feature, layer) {
+                    //layer.bindPopup(feature.properties.USNG);
+                }
+            }).addTo(map);
+
+            if (type == 'click') {
+                map.fitBounds(identifiedFeature.getBounds());
+            }
+
+            pane.innerHTML =
+            '<br><b><u>USNG GRID</u></b>' +
+            '<br><br><b>' + featureCollection.features[0].properties.USNG + '</b>';
+        });
+
+    }
+
+
+    map.on('load', init());   
+
+</script>
+</body>
+</html>
